@@ -29,17 +29,24 @@ void server_start(server_t *server, char *server_name, int perms) {
     log_printf("BEGIN: server_start()\n");
 
     strcpy(server->server_name, server_name);
-    char fifo_name[MAXNAME];
+    char fifo_name[MAXNAME + 5];
     strcpy(fifo_name, server_name);
     strcat(fifo_name, ".fifo"); // the full file name
 
     remove(fifo_name); // remove any existing file of that name
     mkfifo(fifo_name, perms); // create fifo file
     server->join_fd = open(fifo_name, O_RDWR); // open the FIFO and stores its file descriptor in join_fd
-
     check_fail(server->join_fd == -1, 1, "open fifo file %s fail.\n", fifo_name);
-    // TODO Advanced
 
+    // TODO Advanced
+    char log_name[MAXNAME + 5];
+    strcpy(log_name, server_name);
+    strcat(log_name, ".log");
+    // remove(log_name); // remove any existing file of that name
+    server->log_fd = open(log_name, O_WRONLY|O_CREAT);
+    check_fail(server->log_fd == -1, 1, "open log file %s fail.\n", log_name);
+    server->start_time_sec = time(NULL);
+    sem_init(server->log_sem, 0, 0); // on mac it's deprecated
 
     log_printf("server_start: %s\n", server->server_name);
     log_printf("END: server_start()\n");
@@ -68,6 +75,7 @@ void server_shutdown(server_t *server) {
     for (int i = 0; i < server->n_clients; ++i) {
         server_remove_client(server, i);
     }
+
     // TODO Advanced
     close(server->log_fd);
     close(server->join_fd);
@@ -99,7 +107,7 @@ int server_add_client(server_t *server, join_t *join) {
     strcpy(client.name, join->name);
     strcpy(client.to_client_fname, join->to_client_fname);
     strcpy(client.to_server_fname, join->to_server_fname);
-    client.last_contact_time = time(NULL); // timestamp of now
+    client.last_contact_time = time(NULL) - server->start_time_sec; // timestamp of now
 
     client.to_client_fd = open(client.to_client_fname, O_RDWR);
     check_fail(client.to_client_fd == -1, 1, "open fifo file %s\n error", join->to_client_fname);
@@ -190,18 +198,18 @@ void server_check_sources(server_t *server) {
     struct pollfd poll_fds[2 + MAXCLIENTS];
     memset(poll_fds, 0, sizeof(poll_fds));
     for (int i = 0; i < 2 + MAXCLIENTS; ++i) {
-        poll_fds->fd = -1;
+        poll_fds[i].fd = -1;
     }
     poll_fds[0].fd = server->join_fd;
     poll_fds[0].events |= POLLIN;
-    poll_fds[1].fd = server->log_fd;
-    poll_fds[1].events |= POLLIN;
+//    poll_fds[1].fd = server->log_fd;
+//    poll_fds[1].events |= POLLOUT;
     for (int i = 0; i < server->n_clients; ++i) {
         poll_fds[i + 2].fd = server->client[i].to_server_fd;
         poll_fds[i + 2].events |= POLLIN;
     }
 
-    log_printf("poll()'ing to check %d input sources\n", 2 + server->n_clients);
+    log_printf("poll()'ing to check %d input sources\n", 1 + server->n_clients);
     int num = poll(poll_fds, 2 + server->n_clients, -1);
     log_printf("poll() completed with return value %d\n", num);
     if (num == -1) {
@@ -301,10 +309,9 @@ void server_handle_client(server_t *server, int idx) {
         case BL_DISCONNECTED: // TODO Advanced
             break;
         case BL_PING:
+            server_get_client(server, idx)->last_contact_time = time(NULL) - server->start_time_sec; // since start time
             break;
         case BL_SHUTDOWN: // do nothing here
-            break;
-        default:
             break;
     }
 
@@ -315,12 +322,15 @@ void server_handle_client(server_t *server, int idx) {
 // TODO Advanced
 // ADVANCED: Increment the time for the server
 void server_tick(server_t *server) {
-
+    server->time_sec = time(NULL) - server->start_time_sec;
 }
 
 // ADVANCED: Ping all clients in the server by broadcasting a ping.
 void server_ping_clients(server_t *server) {
-
+    mesg_t mesg;
+    memset(&mesg, 0, sizeof(mesg));
+    mesg.kind = BL_PING;
+    server_broadcast(server, &mesg);
 }
 
 // ADVANCED: Check all clients to see if they have contacted the
@@ -331,7 +341,25 @@ void server_ping_clients(server_t *server) {
 // loop indexing as clients may be removed during the loop
 // necessitating index adjustments.
 void server_remove_disconnected(server_t *server, int disconnect_secs) {
+    mesg_t mesg;
+    memset(&mesg, 0, sizeof(mesg));
+    mesg.kind = BL_DISCONNECTED;
+    char disconnected_name_list[MAXCLIENTS][MAXNAME]; // store the leave client names
 
+    int cnt = 0;
+    for (int i = 0; i < server->n_clients; ++i) {
+        if (server_get_client(server, i)->last_contact_time >= disconnect_secs) {
+            server_remove_client(server, i);
+            --i;
+            ++cnt;
+        }
+    }
+
+    // broadcast that the client was disconnected to remaining clients
+    for (int i = 0; i < cnt; ++i) {
+        strcpy(mesg.name, disconnected_name_list[i]);
+        server_broadcast(server, &mesg);
+    }
 }
 
 // ADVANCED: Write the current set of clients logged into the server
@@ -344,12 +372,16 @@ void server_remove_disconnected(server_t *server, int disconnect_secs) {
 // open file descriptor which will not alter the position of log_fd so
 // that appends continue to write to the end of the file.
 void server_write_who(server_t *server) {
+    if (sem_wait(server->log_sem)) {
 
+    }
+    sem_post(server->log_sem);
 }
 
 // ADVANCED: Write the given message to the end of log file associated
 // with the server.
 void server_log_message(server_t *server, mesg_t *mesg) {
-
+    long n_write = write(server->log_fd, mesg, sizeof(mesg_t));
+    check_fail(n_write == -1, 1, "write to fd %d error.\n", server->log_fd);
 }
 

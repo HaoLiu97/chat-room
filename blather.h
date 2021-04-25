@@ -47,6 +47,7 @@ typedef struct {
   int join_ready;               // flag indicating if a join is available
   int n_clients;                // number of clients communicating with server
   client_t client[MAXCLIENTS];  // array of clients populated up to n_clients
+  int start_time_sec;           // ADVANCED: server start unix time stamp
   int time_sec;                 // ADVANCED: time in seconds since server started
   int log_fd;                   // ADVANCED: file descriptor for log
   sem_t *log_sem;               // ADVANCED: posix semaphore to control who_t section of log file
