@@ -70,7 +70,7 @@ void server_shutdown(server_t *server) {
     }
     // TODO Advanced
     close(server->log_fd);
-
+    close(server->join_fd);
 
     log_printf("server_shutdown: %s\n", server->server_name);
     log_printf("END: server_shutdown()\n");
@@ -188,21 +188,24 @@ void server_check_sources(server_t *server) {
 
     struct pollfd poll_fds[2 + MAXCLIENTS];
     memset(poll_fds, 0, sizeof(poll_fds));
+    for (int i = 0; i < 2 + MAXCLIENTS; ++i) {
+        poll_fds->fd = -1;
+    }
     poll_fds[0].fd = server->join_fd;
     poll_fds[0].events |= POLLIN;
-    poll_fds[1].fd = server->log_fd; //
+    poll_fds[1].fd = server->log_fd;
     poll_fds[1].events |= POLLIN;
     for (int i = 0; i < server->n_clients; ++i) {
         poll_fds[i + 2].fd = server->client[i + 2].to_server_fd;
         poll_fds[i + 2].events |= POLLIN;
     }
 
-    log_printf("poll()'ing to check %d input sources\n");
-    int num = poll(poll_fds, POLLIN, -1);
+    log_printf("poll()'ing to check %d input sources\n", 2 + server->n_clients);
+    int num = poll(poll_fds, 2 + server->n_clients, -1);
     log_printf("poll() completed with return value %d\n", num);
     if (num == -1) {
         log_printf("poll() interrupted by a signal\n");
-        return;
+        exit(0);
     }
 
     // check the join_fd
@@ -216,10 +219,10 @@ void server_check_sources(server_t *server) {
     // check all the clients fd
     for (int i = 0; i < server->n_clients; i++) {
         if (POLLIN & poll_fds[i + 2].revents) {
-            log_printf("client %d '%s' data_ready = %d\n", i, server_get_client(server, i).name, 1);
-            server_get_client(server, i).data_ready = 1;
+            log_printf("client %d '%s' data_ready = %d\n", i, server_get_client(server, i)->name, 1);
+            server_get_client(server, i)->data_ready = 1;
         } else {
-            log_printf("client %d '%s' data_ready = %d\n", i, server_get_client(server, i).name, 0);
+            log_printf("client %d '%s' data_ready = %d\n", i, server_get_client(server, i)->name, 0);
         }
     }
 
@@ -288,11 +291,11 @@ void server_handle_client(server_t *server, int idx) {
 
     switch (mesg.kind) {
         BL_DEPARTED:
-            server_remove_client(server.idx);
-            server_broadcast(server, mesg);
+            server_remove_client(server, idx);
+            server_broadcast(server, &mesg);
             break;
         BL_MESG:
-            server_broadcast(server, mesg);
+            server_broadcast(server, &mesg);
             break;
         BL_DISCONNECTED: // TODO Advanced
             break;

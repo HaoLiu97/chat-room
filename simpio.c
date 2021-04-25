@@ -63,7 +63,7 @@ void simpio_set_prompt(simpio_t *simpio, char *prompt){
 // - simpio->line_ready may be set to 1 if a line is completed 
 // - for backspaces, buf and pos decrease
 // 
-// This funciton is used in a loop to read input until line_ready is 1. 
+// This function is used in a loop to read input until line_ready is 1.
 void simpio_get_char(simpio_t *simpio){
   int c = fgetc(simpio->infile);
   if(0){}
@@ -73,7 +73,7 @@ void simpio_get_char(simpio_t *simpio){
   }    
   else if((c == '\b' || c == DEL || c == '\n') && simpio->pos == 0){
     // ignore enter, backspace without input
-  }    
+  }
   else if(c == EOT && simpio->pos > 0){
     simpio->buf[simpio->pos] = '\0';
     simpio->line_ready = 1;

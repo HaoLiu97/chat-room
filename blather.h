@@ -61,7 +61,7 @@ typedef struct {
 
 // mesg_kind_t: Kinds of messages between server/client
 typedef enum {
-  BL_MESG         = 10,         // normal messasge from client with name/body
+  BL_MESG         = 10,         // normal message from client with name/body
   BL_JOINED       = 20,         // client joined the server, name only
   BL_DEPARTED     = 30,         // client leaving/left server normally, name only
   BL_SHUTDOWN     = 40,         // server to client : server is shutting down, no name/body
