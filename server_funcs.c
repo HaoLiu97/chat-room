@@ -155,6 +155,7 @@ int server_remove_client(server_t *server, int idx) {
 // should not be written to the log.
 void server_broadcast(server_t *server, mesg_t *mesg) {
     // send the given message to all clients connected to the server
+    log_printf("server_broadcast() %d\n", server->n_clients);
     for (int i = 0; i < server->n_clients; ++i) {
         long n_write = write(server_get_client(server, i)->to_client_fd,
                              mesg, sizeof(mesg_t));
@@ -196,7 +197,7 @@ void server_check_sources(server_t *server) {
     poll_fds[1].fd = server->log_fd;
     poll_fds[1].events |= POLLIN;
     for (int i = 0; i < server->n_clients; ++i) {
-        poll_fds[i + 2].fd = server->client[i + 2].to_server_fd;
+        poll_fds[i + 2].fd = server->client[i].to_server_fd;
         poll_fds[i + 2].events |= POLLIN;
     }
 
@@ -250,7 +251,7 @@ void server_handle_join(server_t *server) {
     long n_read = read(server->join_fd, &join, sizeof(join_t));
     check_fail(n_read == -1, 1, "read fd %d error.\n", server->join_fd);
     log_printf("join request for new client '%s'\n", join.name);
-
+    server_add_client(server, &join);
     server->join_ready = 0;
     log_printf("END: server_handle_join()\n");
 }
@@ -284,24 +285,24 @@ void server_handle_client(server_t *server, int idx) {
     log_printf("BEGIN: server_handle_client()\n");
     mesg_t mesg;
     memset(&mesg, 0, sizeof(mesg_t));
-    int n_read = read(server_get_client(server, idx)->to_server_fd, &mesg, sizeof(mesg_t));
+    long n_read = read(server_get_client(server, idx)->to_server_fd, &mesg, sizeof(mesg_t));
     check_fail(n_read == -1, 1, "read fd %d error.\n", server_get_client(server, idx)->to_server_fd);
     server_get_client(server, idx)->data_ready = 0;
     server_get_client(server, idx)->last_contact_time = time(NULL);
 
     switch (mesg.kind) {
-        BL_DEPARTED:
+        case BL_DEPARTED:
             server_remove_client(server, idx);
             server_broadcast(server, &mesg);
             break;
-        BL_MESG:
+        case BL_MESG:
             server_broadcast(server, &mesg);
             break;
-        BL_DISCONNECTED: // TODO Advanced
+        case BL_DISCONNECTED: // TODO Advanced
             break;
-        BL_PING:
+        case BL_PING:
             break;
-        BL_SHUTDOWN: // do nothing here
+        case BL_SHUTDOWN: // do nothing here
             break;
         default:
             break;
