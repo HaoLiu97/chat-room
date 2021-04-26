@@ -29,7 +29,7 @@
 #define ALARM_INTERVAL 1          // seconds between alarm rings and pings to clients
 #define DISCONNECT_SECS 5         // seconds before clients are dropped due to lack of contact
 
-// client_t: data on a client connected to the server_actual
+// client_t: data on a client connected to the server
 typedef struct {
   char name[MAXPATH];             // name of the client
   int to_client_fd;               // file descriptor to write to to send to client
@@ -37,49 +37,49 @@ typedef struct {
   char to_client_fname[MAXPATH];  // name of file (FIFO) to write into send to client
   char to_server_fname[MAXPATH];  // name of file (FIFO) to read from receive from client
   int data_ready;                 // flag indicating a mesg_t can be read from to_server_fd
-  int last_contact_time;          // ADVANCED: server_actual time at which last contact was made with client
+  int last_contact_time;          // ADVANCED: server time at which last contact was made with client
 } client_t;
 
-// server_t: data pertaining to server_actual operations
+// server_t: data pertaining to server operations
 typedef struct {
-  char server_name[MAXPATH];    // name of server_actual which dictates file names for joining and logging
+  char server_name[MAXPATH];    // name of server which dictates file names for joining and logging
   int join_fd;                  // file descriptor of join file/FIFO
   int join_ready;               // flag indicating if a join is available
-  int n_clients;                // number of clients communicating with server_actual
+  int n_clients;                // number of clients communicating with server
   client_t client[MAXCLIENTS];  // array of clients populated up to n_clients
-  int start_time_sec;           // ADVANCED: server_actual start unix time stamp
-  int time_sec;                 // ADVANCED: time in seconds since server_actual started
+  int start_time_sec;           // ADVANCED: server start unix time stamp
+  int time_sec;                 // ADVANCED: time in seconds since server started
   int log_fd;                   // ADVANCED: file descriptor for log
   sem_t *log_sem;               // ADVANCED: posix semaphore to control who_t section of log file
 } server_t;
 
 // join_t: structure for requests to join the chat room
 typedef struct {
-  char name[MAXPATH];            // name of the client joining the server_actual
-  char to_client_fname[MAXPATH]; // name of file server_actual writes to to send to client
-  char to_server_fname[MAXPATH]; // name of file client writes to to send to server_actual
+  char name[MAXPATH];            // name of the client joining the server
+  char to_client_fname[MAXPATH]; // name of file server writes to to send to client
+  char to_server_fname[MAXPATH]; // name of file client writes to to send to server
 } join_t;
 
-// mesg_kind_t: Kinds of messages between server_actual/client
+// mesg_kind_t: Kinds of messages between server/client
 typedef enum {
   BL_MESG         = 10,         // normal message from client with name/body
-  BL_JOINED       = 20,         // client joined the server_actual, name only
-  BL_DEPARTED     = 30,         // client leaving/left server_actual normally, name only
-  BL_SHUTDOWN     = 40,         // server_actual to client : server_actual is shutting down, no name/body
+  BL_JOINED       = 20,         // client joined the server, name only
+  BL_DEPARTED     = 30,         // client leaving/left server normally, name only
+  BL_SHUTDOWN     = 40,         // server to client : server is shutting down, no name/body
   BL_DISCONNECTED = 50,         // ADVANCED: client disconnected abnormally, name only
   BL_PING         = 60,         // ADVANCED: ping to ask or show liveness
 } mesg_kind_t;
 
-// mesg_t: struct for messages between server_actual/client
+// mesg_t: struct for messages between server/client
 typedef struct {
   mesg_kind_t kind;               // kind of message
   char name[MAXNAME];             // name of sending client or subject of event
   char body[MAXLINE];             // body text, possibly empty depending on kind
 } mesg_t;
 
-// who_t: data to write into server_actual log for current clients (ADVANCED)
+// who_t: data to write into server log for current clients (ADVANCED)
 typedef struct {
-  int n_clients;                   // number of clients on server_actual
+  int n_clients;                   // number of clients on server
   char names[MAXCLIENTS][MAXNAME]; // names of clients
 } who_t;
 
@@ -95,7 +95,7 @@ typedef struct{
 } simpio_t;
 
 
-// server_actual.c
+// server.c
 client_t *server_get_client(server_t *server, int idx);
 void server_start(server_t *server, char *server_name, int perms);
 void server_shutdown(server_t *server);

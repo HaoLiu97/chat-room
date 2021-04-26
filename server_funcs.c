@@ -1,5 +1,5 @@
 // Implement the functions in this file to manipulate the server_t and client_t data that will ultimately
-// be used by the server_actual to fulfill its role.
+// be used by the server to fulfill its role.
 
 # include "blather.h"
 
@@ -11,7 +11,7 @@ client_t *server_get_client(server_t *server, int idx) {
     return &server->client[idx];
 }
 
-// Initializes and starts the server_actual with the given name. A join fifo
+// Initializes and starts the server with the given name. A join fifo
 // called "server_name.fifo" should be created. Removes any existing
 // file of that name prior to creation. Opens the FIFO and stores its
 // file descriptor in join_fd.
@@ -43,7 +43,7 @@ void server_start(server_t *server, char *server_name, int perms) {
     strcpy(log_name, server_name);
     strcat(log_name, ".log");
     // remove(log_name); // remove any existing file of that name
-    server->log_fd = open(log_name, O_WRONLY|O_CREAT);
+    server->log_fd = open(log_name, O_WRONLY | O_CREAT);
     check_fail(server->log_fd == -1, 1, "open log file %s fail.\n", log_name);
     server->start_time_sec = time(NULL);
     sem_init(server->log_sem, 0, 0); // on mac it's deprecated
@@ -52,7 +52,7 @@ void server_start(server_t *server, char *server_name, int perms) {
     log_printf("END: server_start()\n");
 }
 
-// Shut down the server_actual. Close the join FIFO and unlink (remove) it so
+// Shut down the server. Close the join FIFO and unlink (remove) it so
 // that no further clients can join. Send a BL_SHUTDOWN message to all
 // clients and proceed to remove all clients in any order.
 //
@@ -84,12 +84,12 @@ void server_shutdown(server_t *server) {
     log_printf("END: server_shutdown()\n");
 }
 
-// Adds a client to the server_actual according to the parameter join which
+// Adds a client to the server according to the parameter join which
 // should have fields such as name filed in.  The client data is
 // copied into the client[] array and file descriptors are opened for
-// its to-server_actual and to-client FIFOs. Initializes the data_ready field
+// its to-server and to-client FIFOs. Initializes the data_ready field
 // for the client to 0. Returns 0 on success and non-zero if the
-// server_actual as no space for clients (n_clients == MAXCLIENTS).
+// server as no space for clients (n_clients == MAXCLIENTS).
 //
 // LOG Messages:
 // log_printf("BEGIN: server_add_client()\n");         // at beginning of function
@@ -119,9 +119,9 @@ int server_add_client(server_t *server, join_t *join) {
     memset(&join_mesg, 0, sizeof(mesg_t));
     join_mesg.kind = BL_JOINED;
     strcpy(join_mesg.name, client.name); // the name of client
-    // sprintf(join_mesg.body, "%s join the server_actual %s.", join->name, server_actual->server_name);
+    // sprintf(join_mesg.body, "%s join the server %s.", join->name, server->server_name);
 
-    // add the client info to the server_actual
+    // add the client info to the server
     server->client[server->n_clients++] = client;
     server_broadcast(server, &join_mesg);
 
@@ -156,32 +156,34 @@ int server_remove_client(server_t *server, int idx) {
 }
 
 
-// Send the given message to all clients connected to the server_actual by
+// Send the given message to all clients connected to the server by
 // writing it to the file descriptors associated with them.
 //
 // ADVANCED: Log the broadcast message unless it is a PING which
 // should not be written to the log.
 void server_broadcast(server_t *server, mesg_t *mesg) {
-    // send the given message to all clients connected to the server_actual
+    // send the given message to all clients connected to the server
     log_printf("server_broadcast() %d\n", server->n_clients);
     for (int i = 0; i < server->n_clients; ++i) {
-        long n_write = write(server_get_client(server, i)->to_client_fd,
-                             mesg, sizeof(mesg_t));
+        long n_write = write(server_get_client(server, i)->to_client_fd, mesg, sizeof(mesg_t));
         check_fail(n_write == -1, 1, "write to fd %d error.\n", server_get_client(server, i)->to_client_fd);
+
+        // ADVANCED, write to binary log
+        if (mesg->kind != BL_PING) {
+            server_log_message(server, mesg);
+        }
     }
     log_printf("server_broadcast: %s\n", mesg->body);
-    // TODO Advanced
-
 }
 
-// Checks all sources of data for the server_actual to determine if any are
+// Checks all sources of data for the server to determine if any are
 // ready for reading. Sets the servers join_ready flag and the
 // data_ready flags of each of client if data is ready for them.
 // Makes use of the poll() system call to efficiently determine which
 // sources are ready.
 //
 // NOTE: the poll() system call will return -1 if it is interrupted by
-// the process receiving a signal. This is expected to initiate server_actual
+// the process receiving a signal. This is expected to initiate server
 // shutdown and is handled by returning immediately from this function.
 //
 // LOG Messages:
@@ -202,7 +204,7 @@ void server_check_sources(server_t *server) {
     }
     poll_fds[0].fd = server->join_fd;
     poll_fds[0].events |= POLLIN;
-//    poll_fds[1].fd = server_actual->log_fd;
+//    poll_fds[1].fd = server->log_fd;
 //    poll_fds[1].events |= POLLOUT;
     for (int i = 0; i < server->n_clients; ++i) {
         poll_fds[i + 2].fd = server->client[i].to_server_fd;
@@ -237,14 +239,14 @@ void server_check_sources(server_t *server) {
     log_printf("END: server_check_sources()\n");
 }
 
-// Return the join_ready flag from the server_actual which indicates whether
+// Return the join_ready flag from the server which indicates whether
 // a call to server_handle_join() is safe.
 int server_join_ready(server_t *server) {
     return server->join_ready;
 }
 
 // Call this function only if server_join_ready() returns true. Read a
-// join request and add the new client to the server_actual. After finishing,
+// join request and add the new client to the server. After finishing,
 // set the servers join_ready flag to 0.
 //
 // LOG Messages:
@@ -281,7 +283,7 @@ int server_client_ready(server_t *server, int idx) {
 // data_ready flag so it has value 0.
 //
 // ADVANCED: Update the last_contact_time of the client to the current
-// server_actual time_sec.
+// server time_sec.
 //
 // LOG Messages:
 // log_printf("BEGIN: server_handle_client()\n");           // at beginning of function
@@ -319,12 +321,12 @@ void server_handle_client(server_t *server, int idx) {
 
 
 // TODO Advanced
-// ADVANCED: Increment the time for the server_actual
+// ADVANCED: Increment the time for the server
 void server_tick(server_t *server) {
     server->time_sec = time(NULL) - server->start_time_sec;
 }
 
-// ADVANCED: Ping all clients in the server_actual by broadcasting a ping.
+// ADVANCED: Ping all clients in the server by broadcasting a ping.
 void server_ping_clients(server_t *server) {
     mesg_t mesg;
     memset(&mesg, 0, sizeof(mesg));
@@ -334,7 +336,7 @@ void server_ping_clients(server_t *server) {
 }
 
 // ADVANCED: Check all clients to see if they have contacted the
-// server_actual recently. Any client with a last_contact_time field equal to
+// server recently. Any client with a last_contact_time field equal to
 // or greater than the parameter disconnect_secs should be
 // removed. Broadcast that the client was disconnected to remaining
 // clients.  Process clients from lowest to highest and take care of
@@ -366,12 +368,12 @@ void server_remove_disconnected(server_t *server, int disconnect_secs) {
     }
 }
 
-// ADVANCED: Write the current set of clients logged into the server_actual
+// ADVANCED: Write the current set of clients logged into the server
 // to the BEGINNING the log_fd. Ensure that the write is protected by
 // locking the semaphore associated with the log file. Since it may
 // take some time to complete this operation (acquire semaphore then
 // write) it should likely be done in its own thread to preven the
-// main server_actual operations from stalling.  For threaded I/O, consider
+// main server operations from stalling.  For threaded I/O, consider
 // using the pwrite() function to write to a specific location in an
 // open file descriptor which will not alter the position of log_fd so
 // that appends continue to write to the end of the file.
@@ -383,9 +385,12 @@ void server_write_who(server_t *server) {
 }
 
 // ADVANCED: Write the given message to the end of log file associated
-// with the server_actual.
+// with the server.
 void server_log_message(server_t *server, mesg_t *mesg) {
-    long n_write = write(server->log_fd, mesg, sizeof(mesg_t));
-    check_fail(n_write == -1, 1, "write to fd %d error.\n", server->log_fd);
+    if (sem_wait(server->log_sem)) {
+        long n_write = write(server->log_fd, mesg, sizeof(mesg_t));
+        check_fail(n_write == -1, 1, "write to fd %d error.\n", server->log_fd);
+    }
+    sem_post(server->log_sem);
 }
 

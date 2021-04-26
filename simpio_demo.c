@@ -28,7 +28,7 @@ void *user_worker(void *arg){
   return NULL;
 }
 
-// Worker thread to listen to the info from the server_actual.
+// Worker thread to listen to the info from the server.
 void *background_worker(void *arg){
   char *text[3] = {
     "Background text #1",
