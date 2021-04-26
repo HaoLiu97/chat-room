@@ -38,7 +38,6 @@ void server_start(server_t *server, char *server_name, int perms) {
     server->join_fd = open(fifo_name, O_RDWR); // open the FIFO and stores its file descriptor in join_fd
     check_fail(server->join_fd == -1, 1, "open fifo file %s fail.\n", fifo_name);
 
-    // TODO Advanced
     char log_name[MAXNAME + 5];
     strcpy(log_name, server_name);
     strcat(log_name, ".log");
@@ -50,7 +49,7 @@ void server_start(server_t *server, char *server_name, int perms) {
     char sem_name[MAXNAME + 5];
     strcpy(sem_name, server_name);
     strcat(sem_name, ".sem");
-    server->log_sem = sem_open(sem_name, O_RDWR | O_CREAT, 0644, 0);
+    server->log_sem = sem_open(sem_name, O_RDWR | O_CREAT, 0644, 1);
 
     log_printf("server_start: %s\n", server->server_name);
     log_printf("END: server_start()\n");
@@ -176,11 +175,11 @@ void server_broadcast(server_t *server, mesg_t *mesg) {
     for (int i = 0; i < server->n_clients; ++i) {
         long n_write = write(server_get_client(server, i)->to_client_fd, mesg, sizeof(mesg_t));
         check_fail(n_write == -1, 1, "write to fd %d error.\n", server_get_client(server, i)->to_client_fd);
+    }
 
-        // ADVANCED, write to binary log
-        if (mesg->kind != BL_PING) {
-            server_log_message(server, mesg);
-        }
+    // ADVANCED, write to binary log
+    if (mesg->kind != BL_PING) {
+        server_log_message(server, mesg);
     }
     log_printf("server_broadcast: %s\n", mesg->body);
 }
@@ -393,20 +392,18 @@ void server_write_who(server_t *server) {
     for (int i = 0; i < server->n_clients; ++i) {
         strcpy(who.names[i], server_get_client(server, i)->name);
     }
-    if (sem_wait(server->log_sem)) {
-        pwrite(server->log_fd, &who, sizeof(who_t), 0);
-    }
+    sem_wait(server->log_sem);
+    pwrite(server->log_fd, &who, sizeof(who_t), 0);
     sem_post(server->log_sem);
 }
 
 // ADVANCED: Write the given message to the end of log file associated
 // with the server.
 void server_log_message(server_t *server, mesg_t *mesg) {
-    if (sem_wait(server->log_sem)) {
-        long f_offset = lseek(server->log_fd, 0, SEEK_END);
-        long n_write = pwrite(server->log_fd, mesg, sizeof(mesg_t), f_offset);
-        check_fail(n_write == -1, 1, "write to fd %d error.\n", server->log_fd);
-    }
+    sem_wait(server->log_sem);
+    long f_offset = lseek(server->log_fd, 0, SEEK_END);
+    long n_write = pwrite(server->log_fd, mesg, sizeof(mesg_t), f_offset);
+    check_fail(n_write == -1, 1, "write to fd %d error.\n", server->log_fd);
     sem_post(server->log_sem);
 }
 

@@ -9,6 +9,7 @@
 
 simpio_t simpio_actual;
 simpio_t *simpio = &simpio_actual;
+int DO_ADVANCED;
 
 int server_fd;
 int log_fd;
@@ -35,27 +36,29 @@ void *user_worker(void *arg) {
         if (strncmp(simpio->buf, "%who", 4) == 0) {
             dbg_printf("get clients in the server.\n");
             who_t who;
-            long offset = lseek(log_fd, 0, SEEK_CUR);
+            long offset = lseek(log_fd, 0, SEEK_SET);
             pread(log_fd, &who, sizeof(who_t), offset);
-            iprintf(simpio, "====================");
+            iprintf(simpio, "====================\n");
             iprintf(simpio, "%d CLIENTS\n", who.n_clients);
             for (int i = 0; i < who.n_clients; ++i) {
                 iprintf(simpio, "%d: %s\n", i, who.names[i]);
             }
-            iprintf(simpio, "====================");
+            iprintf(simpio, "====================\n");
         } else if (strncmp(simpio->buf, "%last", 5) == 0) {
             int num = atoi(simpio->buf + 6); // last message number
             dbg_printf("get last %d message.\n", num);
-            iprintf(simpio, "====================");
-            long offset = lseek(log_fd, -sizeof(mesg_t) * num, SEEK_END);
+            iprintf(simpio, "====================\n");
+            long offset = lseek(log_fd, 0, SEEK_END);
             check_fail(offset == -1, 1, "lseek error.\n");
+            offset = offset - num * sizeof(mesg_t);
             mesg_t mesg;
+            iprintf(simpio, "LAST %d MESSAGES\n", num);
             for (int i = 0; i < num; ++i) {
                 pread(log_fd, &mesg, sizeof(mesg_t), offset);
-
                 offset += sizeof(mesg_t);
+                iprintf(simpio, "[%s] : %s\n", mesg.name, mesg.body);
             }
-            iprintf(simpio, "====================");
+            iprintf(simpio, "====================\n");
         } else {
             mesg_t mesg;
             memset(&mesg, 0, sizeof(mesg));
@@ -118,6 +121,7 @@ void *server_worker(void *arg) {
                         break;
                     case BL_PING:
                         memset(&mesg, 0, sizeof(mesg));
+                        mesg.kind = BL_PING;
                         strcpy(mesg.name, client->name);
                         // response to the server
                         long n_write = write(client->to_server_fd, &mesg, sizeof(mesg_t));
@@ -158,6 +162,10 @@ int main(int argc, char *argv[]) {
     if (argc <= 2) {
         log_printf("Please specify the server name and user name.\n");
         return 0;
+    }
+
+    if(getenv("BL_ADVANCED")){
+        DO_ADVANCED=1;
     }
 
     // The client should also handle SIGTERM and SIGINT by shutting down gracefully.
