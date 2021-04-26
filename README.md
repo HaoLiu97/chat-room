@@ -16,7 +16,7 @@ blather被限制只在单机运行，通过管道通信，只有能读写相关�
 | ----------------- | -------- | -------------------------------------------------------------------- |
 | GROUP_MEMBERS.txt | Edit     | Fill in names of group members to indicate partnerships              |
 | Makefile           | Create   | Build project, run tests                                             |
-| server_funcs.c    | Create   | Service routines for the server                                      |
+| server_funcs.c    | Create   | Service routines for the server_actual                                      |
 | bl_server.c       | Create   | Main function for bl_server executable                               |
 | bl_client.c       | Create   | Main function for bl_client executable                               |
 | blather.h         | Provided | Header file which contains required structs, defines, and prototypes   |

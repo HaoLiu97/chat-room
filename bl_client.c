@@ -1,4 +1,4 @@
-// Implement the client which allows a single user to communicate with the server in this file.
+// Implement the client which allows a single user to communicate with the server_actual in this file.
 // The client must have multiple threads so you will need to implement some worker functions
 // as thread entry points here.
 
@@ -20,7 +20,7 @@ simpio_t simpio_actual;
 char pid[100]; // process id, used to name file
 
 // The user thread performs an input loop until the user has completed a line.
-// It then writes message data into the to-server FIFO to get it to the server
+// It then writes message data into the to-server_actual FIFO to get it to the server_actual
 // and goes back to reading user input.
 void *user_worker(void *arg) {
     while (1) {
@@ -57,7 +57,7 @@ void *user_worker(void *arg) {
     return NULL;
 }
 
-// The server thread reads data from the to-client FIFO and prints to the screen
+// The server_actual thread reads data from the to-client FIFO and prints to the screen
 // as data is read.
 void *server_worker(void *arg) {
     while (1) {
@@ -81,12 +81,18 @@ void *server_worker(void *arg) {
                         iprintf(simpio, "-- %s DEPARTED --\n", mesg.name);
                         break;
                     case BL_SHUTDOWN:
-                        iprintf(simpio, "!!! server is shutting down !!!\n");
+                        iprintf(simpio, "!!! server_actual is shutting down !!!\n");
                         pthread_cancel(user_thread);
                         break;
                     case BL_DISCONNECTED: // TODO ADVANCED
+                        iprintf(simpio, "-- %s DISCONNECTED --\n", mesg.name);
                         break;
                     case BL_PING:
+                        memset(&mesg, 0, sizeof(mesg));
+                        strcpy(mesg.name, client->name);
+                        // response to the server
+                        long n_write = write(client->to_server_fd, &mesg, sizeof(mesg_t));
+                        check_fail(n_write == -1, 1, "write to fd %d error.\n", client->to_server_fd);
                         break;
                 }
             }
@@ -100,7 +106,7 @@ void grace_leave(int sig) {
     memset(&mesg, 0, sizeof(mesg));
     strcpy(mesg.name, client->name);
     mesg.kind = BL_DEPARTED;
-    // sent to the server, tell other client about the leave
+    // sent to the server_actual, tell other client about the leave
     long n_write = write(client->to_server_fd, &mesg, sizeof(mesg_t));
     check_fail(n_write == -1, 1, "write to fd %d error.\n", client->to_server_fd);
 
@@ -121,7 +127,7 @@ void init_simpio(char *name) {
 
 int main(int argc, char *argv[]) {
     if (argc <= 2) {
-        log_printf("Please specify the server name and user name.\n");
+        log_printf("Please specify the server_actual name and user name.\n");
         return 0;
     }
 
@@ -135,16 +141,16 @@ int main(int argc, char *argv[]) {
     init_simpio(argv[2]);
 
     sprintf(pid, "%d", getpid());
-    log_printf("server_name: %s    client_name: %s \n", argv[1], argv[2]); // server_name and client_name
+    dbg_printf("server_name: %s    client_name: %s \n", argv[1], argv[2]); // server_name and client_name
 
     char server_fifo[MAXNAME];
     strcpy(server_fifo, argv[1]);
-    strcat(server_fifo, ".fifo"); // server filename filled
+    strcat(server_fifo, ".fifo"); // server_actual filename filled
 
     strcpy(client->name, argv[2]); // client name filled
 
     strcpy(client->to_server_fname, pid);
-    strcat(client->to_server_fname, ".server.fifo"); // to_server_fname filled
+    strcat(client->to_server_fname, ".server_actual.fifo"); // to_server_fname filled
 
     strcpy(client->to_client_fname, pid);
     strcat(client->to_client_fname, ".client.fifo"); // to_client_fname filled
@@ -156,7 +162,7 @@ int main(int argc, char *argv[]) {
 
     // open fifo files
     server_fd = open(server_fifo, O_RDWR);
-    check_fail(server_fd == -1, 1, "open server fifo error\n");
+    check_fail(server_fd == -1, 1, "open server_actual fifo error\n");
 
     client->to_server_fd = open(client->to_server_fname, O_RDWR);
     check_fail(client->to_server_fd == -1, 1, "open to_server fifo error\n");
@@ -171,7 +177,7 @@ int main(int argc, char *argv[]) {
     strcpy(join.name, argv[2]);
     strcpy(join.to_client_fname, client->to_client_fname);
     strcpy(join.to_server_fname, client->to_server_fname);
-    long n_write = write(server_fd, &join, sizeof(join_t)); // tell server the client is joining
+    long n_write = write(server_fd, &join, sizeof(join_t)); // tell server_actual the client is joining
     check_fail(n_write == -1, 1, "write to %d error.\n", server_fd);
 
     // create pthreads
@@ -180,7 +186,7 @@ int main(int argc, char *argv[]) {
     check_fail(user_thread_id != 0, 1, "create the user thread error.\n");
     int server_thread_id = pthread_create(&server_thread,
                                           NULL, server_worker, NULL);
-    check_fail(server_thread_id != 0, 1, "create the server thread error.\n");
+    check_fail(server_thread_id != 0, 1, "create the server_actual thread error.\n");
 
     // waiting for threads end
     pthread_join(user_thread, NULL);

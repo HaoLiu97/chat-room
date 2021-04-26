@@ -1,5 +1,5 @@
 // Implement the functions in this file to manipulate the server_t and client_t data that will ultimately
-// be used by the server to fulfill its role.
+// be used by the server_actual to fulfill its role.
 
 # include "blather.h"
 
@@ -11,7 +11,7 @@ client_t *server_get_client(server_t *server, int idx) {
     return &server->client[idx];
 }
 
-// Initializes and starts the server with the given name. A join fifo
+// Initializes and starts the server_actual with the given name. A join fifo
 // called "server_name.fifo" should be created. Removes any existing
 // file of that name prior to creation. Opens the FIFO and stores its
 // file descriptor in join_fd.
@@ -52,7 +52,7 @@ void server_start(server_t *server, char *server_name, int perms) {
     log_printf("END: server_start()\n");
 }
 
-// Shut down the server. Close the join FIFO and unlink (remove) it so
+// Shut down the server_actual. Close the join FIFO and unlink (remove) it so
 // that no further clients can join. Send a BL_SHUTDOWN message to all
 // clients and proceed to remove all clients in any order.
 //
@@ -84,12 +84,12 @@ void server_shutdown(server_t *server) {
     log_printf("END: server_shutdown()\n");
 }
 
-// Adds a client to the server according to the parameter join which
+// Adds a client to the server_actual according to the parameter join which
 // should have fields such as name filed in.  The client data is
 // copied into the client[] array and file descriptors are opened for
-// its to-server and to-client FIFOs. Initializes the data_ready field
+// its to-server_actual and to-client FIFOs. Initializes the data_ready field
 // for the client to 0. Returns 0 on success and non-zero if the
-// server as no space for clients (n_clients == MAXCLIENTS).
+// server_actual as no space for clients (n_clients == MAXCLIENTS).
 //
 // LOG Messages:
 // log_printf("BEGIN: server_add_client()\n");         // at beginning of function
@@ -107,7 +107,7 @@ int server_add_client(server_t *server, join_t *join) {
     strcpy(client.name, join->name);
     strcpy(client.to_client_fname, join->to_client_fname);
     strcpy(client.to_server_fname, join->to_server_fname);
-    client.last_contact_time = time(NULL) - server->start_time_sec; // timestamp of now
+    client.last_contact_time = time(NULL) - server->start_time_sec; // time since server start
 
     client.to_client_fd = open(client.to_client_fname, O_RDWR);
     check_fail(client.to_client_fd == -1, 1, "open fifo file %s\n error", join->to_client_fname);
@@ -119,9 +119,9 @@ int server_add_client(server_t *server, join_t *join) {
     memset(&join_mesg, 0, sizeof(mesg_t));
     join_mesg.kind = BL_JOINED;
     strcpy(join_mesg.name, client.name); // the name of client
-    // sprintf(join_mesg.body, "%s join the server %s.", join->name, server->server_name);
+    // sprintf(join_mesg.body, "%s join the server_actual %s.", join->name, server_actual->server_name);
 
-    // add the client info to the server
+    // add the client info to the server_actual
     server->client[server->n_clients++] = client;
     server_broadcast(server, &join_mesg);
 
@@ -156,13 +156,13 @@ int server_remove_client(server_t *server, int idx) {
 }
 
 
-// Send the given message to all clients connected to the server by
+// Send the given message to all clients connected to the server_actual by
 // writing it to the file descriptors associated with them.
 //
 // ADVANCED: Log the broadcast message unless it is a PING which
 // should not be written to the log.
 void server_broadcast(server_t *server, mesg_t *mesg) {
-    // send the given message to all clients connected to the server
+    // send the given message to all clients connected to the server_actual
     log_printf("server_broadcast() %d\n", server->n_clients);
     for (int i = 0; i < server->n_clients; ++i) {
         long n_write = write(server_get_client(server, i)->to_client_fd,
@@ -174,14 +174,14 @@ void server_broadcast(server_t *server, mesg_t *mesg) {
 
 }
 
-// Checks all sources of data for the server to determine if any are
+// Checks all sources of data for the server_actual to determine if any are
 // ready for reading. Sets the servers join_ready flag and the
 // data_ready flags of each of client if data is ready for them.
 // Makes use of the poll() system call to efficiently determine which
 // sources are ready.
 //
 // NOTE: the poll() system call will return -1 if it is interrupted by
-// the process receiving a signal. This is expected to initiate server
+// the process receiving a signal. This is expected to initiate server_actual
 // shutdown and is handled by returning immediately from this function.
 //
 // LOG Messages:
@@ -202,7 +202,7 @@ void server_check_sources(server_t *server) {
     }
     poll_fds[0].fd = server->join_fd;
     poll_fds[0].events |= POLLIN;
-//    poll_fds[1].fd = server->log_fd;
+//    poll_fds[1].fd = server_actual->log_fd;
 //    poll_fds[1].events |= POLLOUT;
     for (int i = 0; i < server->n_clients; ++i) {
         poll_fds[i + 2].fd = server->client[i].to_server_fd;
@@ -214,7 +214,6 @@ void server_check_sources(server_t *server) {
     log_printf("poll() completed with return value %d\n", num);
     if (num == -1) {
         log_printf("poll() interrupted by a signal\n");
-        exit(0);
     }
 
     // check the join_fd
@@ -238,14 +237,14 @@ void server_check_sources(server_t *server) {
     log_printf("END: server_check_sources()\n");
 }
 
-// Return the join_ready flag from the server which indicates whether
+// Return the join_ready flag from the server_actual which indicates whether
 // a call to server_handle_join() is safe.
 int server_join_ready(server_t *server) {
     return server->join_ready;
 }
 
 // Call this function only if server_join_ready() returns true. Read a
-// join request and add the new client to the server. After finishing,
+// join request and add the new client to the server_actual. After finishing,
 // set the servers join_ready flag to 0.
 //
 // LOG Messages:
@@ -258,7 +257,7 @@ void server_handle_join(server_t *server) {
     memset(&join, 0, sizeof(join_t));
     long n_read = read(server->join_fd, &join, sizeof(join_t));
     check_fail(n_read == -1, 1, "read fd %d error.\n", server->join_fd);
-    log_printf("join request for new client '%s'\n", join.name);
+    dbg_printf("join request for new client '%s'\n", join.name);
     server_add_client(server, &join);
     server->join_ready = 0;
     log_printf("END: server_handle_join()\n");
@@ -282,7 +281,7 @@ int server_client_ready(server_t *server, int idx) {
 // data_ready flag so it has value 0.
 //
 // ADVANCED: Update the last_contact_time of the client to the current
-// server time_sec.
+// server_actual time_sec.
 //
 // LOG Messages:
 // log_printf("BEGIN: server_handle_client()\n");           // at beginning of function
@@ -320,21 +319,22 @@ void server_handle_client(server_t *server, int idx) {
 
 
 // TODO Advanced
-// ADVANCED: Increment the time for the server
+// ADVANCED: Increment the time for the server_actual
 void server_tick(server_t *server) {
     server->time_sec = time(NULL) - server->start_time_sec;
 }
 
-// ADVANCED: Ping all clients in the server by broadcasting a ping.
+// ADVANCED: Ping all clients in the server_actual by broadcasting a ping.
 void server_ping_clients(server_t *server) {
     mesg_t mesg;
     memset(&mesg, 0, sizeof(mesg));
     mesg.kind = BL_PING;
     server_broadcast(server, &mesg);
+    server_remove_disconnected(server, 5);
 }
 
 // ADVANCED: Check all clients to see if they have contacted the
-// server recently. Any client with a last_contact_time field equal to
+// server_actual recently. Any client with a last_contact_time field equal to
 // or greater than the parameter disconnect_secs should be
 // removed. Broadcast that the client was disconnected to remaining
 // clients.  Process clients from lowest to highest and take care of
@@ -346,14 +346,18 @@ void server_remove_disconnected(server_t *server, int disconnect_secs) {
     mesg.kind = BL_DISCONNECTED;
     char disconnected_name_list[MAXCLIENTS][MAXNAME]; // store the leave client names
 
+    dbg_printf("checking clients' connection.\n");
+
     int cnt = 0;
     for (int i = 0; i < server->n_clients; ++i) {
-        if (server_get_client(server, i)->last_contact_time >= disconnect_secs) {
+        if (server->time_sec - server_get_client(server, i)->last_contact_time >= disconnect_secs) {
+            strcpy(disconnected_name_list[cnt++], server_get_client(server, i)->name);
             server_remove_client(server, i);
             --i;
-            ++cnt;
         }
     }
+
+    dbg_printf("%d clients ard disconnected.\n", cnt);
 
     // broadcast that the client was disconnected to remaining clients
     for (int i = 0; i < cnt; ++i) {
@@ -362,12 +366,12 @@ void server_remove_disconnected(server_t *server, int disconnect_secs) {
     }
 }
 
-// ADVANCED: Write the current set of clients logged into the server
+// ADVANCED: Write the current set of clients logged into the server_actual
 // to the BEGINNING the log_fd. Ensure that the write is protected by
 // locking the semaphore associated with the log file. Since it may
 // take some time to complete this operation (acquire semaphore then
 // write) it should likely be done in its own thread to preven the
-// main server operations from stalling.  For threaded I/O, consider
+// main server_actual operations from stalling.  For threaded I/O, consider
 // using the pwrite() function to write to a specific location in an
 // open file descriptor which will not alter the position of log_fd so
 // that appends continue to write to the end of the file.
@@ -379,7 +383,7 @@ void server_write_who(server_t *server) {
 }
 
 // ADVANCED: Write the given message to the end of log file associated
-// with the server.
+// with the server_actual.
 void server_log_message(server_t *server, mesg_t *mesg) {
     long n_write = write(server->log_fd, mesg, sizeof(mesg_t));
     check_fail(n_write == -1, 1, "write to fd %d error.\n", server->log_fd);
