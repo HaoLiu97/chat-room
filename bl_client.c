@@ -11,6 +11,7 @@ simpio_t simpio_actual;
 simpio_t *simpio = &simpio_actual;
 
 int server_fd;
+int log_fd;
 client_t client_actual;
 client_t *client = &client_actual;
 
@@ -29,27 +30,55 @@ void *user_worker(void *arg) {
         while (!simpio->line_ready && !simpio->end_of_input) {          // read until line is complete
             simpio_get_char(simpio);
         }
-        mesg_t mesg;
-        memset(&mesg, 0, sizeof(mesg));
-        strcpy(mesg.name, client->name);
-        strcpy(mesg.body, simpio_actual.buf); // fill mesg body with what user just input
 
-        // if end_of_input, the client leave
-        if (simpio_actual.end_of_input) {
-            mesg.kind = BL_DEPARTED;
+        // show who's connected to the server
+        if (strncmp(simpio->buf, "%who", 4) == 0) {
+            dbg_printf("get clients in the server.\n");
+            who_t who;
+            long offset = lseek(log_fd, 0, SEEK_CUR);
+            pread(log_fd, &who, sizeof(who_t), offset);
+            iprintf(simpio, "====================");
+            iprintf(simpio, "%d CLIENTS\n", who.n_clients);
+            for (int i = 0; i < who.n_clients; ++i) {
+                iprintf(simpio, "%d: %s\n", i, who.names[i]);
+            }
+            iprintf(simpio, "====================");
+        } else if (strncmp(simpio->buf, "%last", 5) == 0) {
+            int num = atoi(simpio->buf + 6); // last message number
+            dbg_printf("get last %d message.\n", num);
+            iprintf(simpio, "====================");
+            long offset = lseek(log_fd, -sizeof(mesg_t) * num, SEEK_END);
+            check_fail(offset == -1, 1, "lseek error.\n");
+            mesg_t mesg;
+            for (int i = 0; i < num; ++i) {
+                pread(log_fd, &mesg, sizeof(mesg_t), offset);
+
+                offset += sizeof(mesg_t);
+            }
+            iprintf(simpio, "====================");
         } else {
-            mesg.kind = BL_MESG;
-        }
+            mesg_t mesg;
+            memset(&mesg, 0, sizeof(mesg));
+            strcpy(mesg.name, client->name);
+            strcpy(mesg.body, simpio->buf); // fill mesg body with what user just input
 
-        // sent to the server
-        long n_write = write(client->to_server_fd, &mesg, sizeof(mesg_t));
-        check_fail(n_write == -1, 1, "write to fd %d error.\n", client->to_server_fd);
+            // if end_of_input, the client leave
+            if (simpio->end_of_input) {
+                mesg.kind = BL_DEPARTED;
+            } else {
+                mesg.kind = BL_MESG;
+            }
+
+            // sent to the server
+            long n_write = write(client->to_server_fd, &mesg, sizeof(mesg_t));
+            check_fail(n_write == -1, 1, "write to fd %d error.\n", client->to_server_fd);
+        }
 
         // break the loop at the end of input
-        if (simpio_actual.end_of_input) {
+        if (simpio->end_of_input) {
             break;
         }
-        simpio_reset(&simpio_actual);
+        simpio_reset(simpio);
     }
 
     pthread_cancel(server_thread);
@@ -143,7 +172,7 @@ int main(int argc, char *argv[]) {
     sprintf(pid, "%d", getpid());
     dbg_printf("server_name: %s    client_name: %s \n", argv[1], argv[2]); // server_name and client_name
 
-    char server_fifo[MAXNAME];
+    char server_fifo[MAXNAME + 5];
     strcpy(server_fifo, argv[1]);
     strcat(server_fifo, ".fifo"); // server filename filled
 
@@ -170,6 +199,12 @@ int main(int argc, char *argv[]) {
     client->to_client_fd = open(client->to_client_fname, O_RDWR);
     check_fail(client->to_client_fd == -1, 1, "open to_client fifo error\n");
 
+    char log_file[MAXNAME + 5];
+    strcpy(log_file, argv[1]);
+    strcat(log_file, ".log");
+    // open log file
+    log_fd = open(log_file, O_RDONLY);
+    check_fail(log_fd == -1, 1, "open log file error\n");
 
     // fill join info
     join_t join;

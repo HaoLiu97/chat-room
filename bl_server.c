@@ -20,6 +20,7 @@ void ping_clients(int sig) {
     server_tick(server);
     dbg_printf("server has ran for %d second.\n", server->time_sec);
     server_ping_clients(server);
+    server_write_who(server);
 }
 
 int main(int argc, char *argv[]) {

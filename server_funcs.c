@@ -43,10 +43,14 @@ void server_start(server_t *server, char *server_name, int perms) {
     strcpy(log_name, server_name);
     strcat(log_name, ".log");
     // remove(log_name); // remove any existing file of that name
-    server->log_fd = open(log_name, O_WRONLY | O_CREAT);
+    server->log_fd = open(log_name, O_RDWR | O_CREAT);
     check_fail(server->log_fd == -1, 1, "open log file %s fail.\n", log_name);
     server->start_time_sec = time(NULL);
-    sem_init(server->log_sem, 0, 0); // on mac it's deprecated
+
+    char sem_name[MAXNAME + 5];
+    strcpy(sem_name, server_name);
+    strcat(sem_name, ".sem");
+    server->log_sem = sem_open(sem_name, O_RDWR | O_CREAT, 0644, 0);
 
     log_printf("server_start: %s\n", server->server_name);
     log_printf("END: server_start()\n");
@@ -79,6 +83,11 @@ void server_shutdown(server_t *server) {
     // TODO Advanced
     close(server->log_fd);
     close(server->join_fd);
+    sem_close(server->log_sem);
+    char sem_name[MAXNAME + 5];
+    strcpy(sem_name, server->server_name);
+    strcat(sem_name, ".sem");
+    check_fail(sem_unlink(sem_name) == -1, 1, "unlink sem %s error.", sem_name);
 
     log_printf("server_shutdown: %s\n", server->server_name);
     log_printf("END: server_shutdown()\n");
@@ -378,8 +387,14 @@ void server_remove_disconnected(server_t *server, int disconnect_secs) {
 // open file descriptor which will not alter the position of log_fd so
 // that appends continue to write to the end of the file.
 void server_write_who(server_t *server) {
+    who_t who;
+    memset(&who, 0, sizeof(who_t));
+    who.n_clients = server->n_clients;
+    for (int i = 0; i < server->n_clients; ++i) {
+        strcpy(who.names[i], server_get_client(server, i)->name);
+    }
     if (sem_wait(server->log_sem)) {
-
+        pwrite(server->log_fd, &who, sizeof(who_t), 0);
     }
     sem_post(server->log_sem);
 }
@@ -388,7 +403,8 @@ void server_write_who(server_t *server) {
 // with the server.
 void server_log_message(server_t *server, mesg_t *mesg) {
     if (sem_wait(server->log_sem)) {
-        long n_write = write(server->log_fd, mesg, sizeof(mesg_t));
+        long f_offset = lseek(server->log_fd, 0, SEEK_END);
+        long n_write = pwrite(server->log_fd, mesg, sizeof(mesg_t), f_offset);
         check_fail(n_write == -1, 1, "write to fd %d error.\n", server->log_fd);
     }
     sem_post(server->log_sem);
