@@ -42,7 +42,7 @@ simpio_demo.o: simpio_demo.c
 	$(CC) -c simpio_demo.c
 
 clean :
-	rm -f bl_server bl_client bl_showlog simpio_demo *.o *.fifo
+	rm -f bl_server bl_client bl_showlog simpio_demo *.o *.fifo CLOSED OUTPUT *.log
 	rm -r test-results
 
 include test_Makefile

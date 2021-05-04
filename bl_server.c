@@ -4,10 +4,9 @@
 #include "blather.h"
 
 server_t server_actual;
-server_t * server = &server_actual;
+server_t *server = &server_actual;
 int DO_ADVANCED;
 
-pthread_t user_thread;
 // shutting down gracefully.
 void grace_shutdown(int sig) {
     dbg_printf("shutdown gracefully.\n");
@@ -15,7 +14,6 @@ void grace_shutdown(int sig) {
     log_printf("poll() interrupted by a signal\n");
     log_printf("END: server_check_sources()\n");
     server_shutdown(server);
-    
     exit(0);
 }
 
@@ -29,40 +27,38 @@ void ping_clients(int sig) {
 }
 
 int main(int argc, char *argv[]) {
-    if(argc <= 1) {
+    if (argc <= 1) {
         log_printf("Please specify the server name.\n");
         return 0;
     }
 
-    if(getenv("BL_ADVANCED")){
-        DO_ADVANCED=1;
+    if (getenv("BL_ADVANCED")) {
+        DO_ADVANCED = 1;
     }
 
     // The server should handle SIGTERM and SIGINT by shutting down gracefully.
     struct sigaction sa = {};
     sigemptyset(&sa.sa_mask);
     sa.sa_handler = grace_shutdown;
-    sa.sa_flags = SA_RESTART;
+//    sa.sa_flags = SA_RESTART;
     sigaction(SIGTERM, &sa, NULL);
-    sigaction(SIGINT,  &sa, NULL);
+    sigaction(SIGINT, &sa, NULL);
 
-    if(DO_ADVANCED) {
+    if (DO_ADVANCED) {
         // ping
-        struct sigaction sa_ping = {};
+        struct sigaction sa_ping;
         sigemptyset(&sa_ping.sa_mask);
         sa_ping.sa_handler = ping_clients;
-        sa_ping.sa_flags = SA_RESTART; // restart poll
+        // sa_ping.sa_flags = SA_RESTART; // restart poll
         sigaction(SIGALRM, &sa_ping, NULL);
-        if (DO_ADVANCED) {
-            alarm(1);
-        }
+        alarm(1);
     }
 
     // start server
     server_start(server, argv[1], DEFAULT_PERMS);
 
     // infinite loop, quit by handle signal
-    while(1) {
+    while (1) {
         dbg_printf("checking source.\n");
         server_check_sources(server);
         dbg_printf("check source done.\n");

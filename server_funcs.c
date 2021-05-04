@@ -92,6 +92,7 @@ void server_shutdown(server_t *server) {
         strcpy(sem_name, server->server_name);
         strcat(sem_name, ".sem");
         check_fail(sem_unlink(sem_name) == -1, 1, "unlink sem %s error.", sem_name);
+        remove(sem_name);
     }
 
     dbg_printf("server_shutdown: %s\n", server->server_name);
