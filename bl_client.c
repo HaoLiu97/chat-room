@@ -32,8 +32,21 @@ void *user_worker(void *arg) {
             simpio_get_char(simpio);
         }
 
+        // break the loop at the end of input
+        if (simpio->end_of_input) {
+            iprintf(simpio, "End of Input, Departing\n");  
+            mesg_t mesg;
+            memset(&mesg, 0, sizeof(mesg));
+            strcpy(mesg.name, client->name);
+            mesg.kind = BL_DEPARTED;
+            // sent to the server, tell other client about the leave
+            long n_write = write(client->to_server_fd, &mesg, sizeof(mesg_t));
+            check_fail(n_write == -1, 1, "write to fd %d error.\n", client->to_server_fd);     
+            break;
+        }
+
         // show who's connected to the server
-        if (strncmp(simpio->buf, "%who", 4) == 0) {
+        if (DO_ADVANCED && strncmp(simpio->buf, "%who", 4) == 0 && DO_ADVANCED) {
             dbg_printf("get clients in the server.\n");
             who_t who;
             long offset = lseek(log_fd, 0, SEEK_SET);
@@ -44,7 +57,7 @@ void *user_worker(void *arg) {
                 iprintf(simpio, "%d: %s\n", i, who.names[i]);
             }
             iprintf(simpio, "====================\n");
-        } else if (strncmp(simpio->buf, "%last", 5) == 0) {
+        } else if (DO_ADVANCED && strncmp(simpio->buf, "%last", 5) == 0) {
             int num = atoi(simpio->buf + 6); // last message number
             dbg_printf("get last %d message.\n", num);
             iprintf(simpio, "====================\n");
@@ -77,10 +90,7 @@ void *user_worker(void *arg) {
             check_fail(n_write == -1, 1, "write to fd %d error.\n", client->to_server_fd);
         }
 
-        // break the loop at the end of input
-        if (simpio->end_of_input) {
-            break;
-        }
+
         simpio_reset(simpio);
     }
 
@@ -96,6 +106,8 @@ void *server_worker(void *arg) {
         mesg_t mesg;
         memset(&mesg, 0, sizeof(mesg));
         struct pollfd poll_fds[1];
+        memset(poll_fds, 0, sizeof(poll_fds));
+        
         poll_fds[0].fd = client->to_client_fd;
         poll_fds[0].events |= POLLIN;
         int num = poll(poll_fds, 1, -1);
@@ -114,7 +126,6 @@ void *server_worker(void *arg) {
                         break;
                     case BL_SHUTDOWN:
                         iprintf(simpio, "!!! server is shutting down !!!\n");
-                        pthread_cancel(user_thread);
                         break;
                     case BL_DISCONNECTED: // TODO ADVANCED
                         iprintf(simpio, "-- %s DISCONNECTED --\n", mesg.name);
@@ -128,6 +139,10 @@ void *server_worker(void *arg) {
                         check_fail(n_write == -1, 1, "write to fd %d error.\n", client->to_server_fd);
                         break;
                 }
+            }       
+            if(mesg.kind == BL_SHUTDOWN) {
+                pthread_cancel(user_thread);
+                break;
             }
         }
     }
@@ -142,10 +157,6 @@ void grace_leave(int sig) {
     // sent to the server, tell other client about the leave
     long n_write = write(client->to_server_fd, &mesg, sizeof(mesg_t));
     check_fail(n_write == -1, 1, "write to fd %d error.\n", client->to_server_fd);
-
-    close(server_fd);
-    close(client->to_server_fd);
-    close(client->to_client_fd);
     exit(0);
 }
 
@@ -164,12 +175,13 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 
-    if(getenv("BL_ADVANCED")){
-        DO_ADVANCED=1;
+    if (getenv("BL_ADVANCED")) {
+        DO_ADVANCED = 1;
     }
 
     // The client should also handle SIGTERM and SIGINT by shutting down gracefully.
-    struct sigaction sa;
+    struct sigaction sa = {};
+
     sigemptyset(&sa.sa_mask);
     sa.sa_handler = grace_leave;
     sigaction(SIGTERM, &sa, NULL);
@@ -207,12 +219,14 @@ int main(int argc, char *argv[]) {
     client->to_client_fd = open(client->to_client_fname, O_RDWR);
     check_fail(client->to_client_fd == -1, 1, "open to_client fifo error\n");
 
-    char log_file[MAXNAME + 5];
-    strcpy(log_file, argv[1]);
-    strcat(log_file, ".log");
-    // open log file
-    log_fd = open(log_file, O_RDONLY);
-    check_fail(log_fd == -1, 1, "open log file error\n");
+    if (DO_ADVANCED) {
+        char log_file[MAXNAME + 5];
+        strcpy(log_file, argv[1]);
+        strcat(log_file, ".log");
+        // open log file
+        log_fd = open(log_file, O_RDONLY);
+        check_fail(log_fd == -1, 1, "open log file error\n");
+    }
 
     // fill join info
     join_t join;

@@ -1,0 +1,14 @@
+{
+   <sem_open uninitialized bug>
+   Memcheck:Param
+   write(buf)
+   fun:write
+   fun:sem_open
+}
+{
+   <Ignore dlopen bug>
+   Memcheck:Leak
+   ...
+   fun:_dl_open
+   ...
+}

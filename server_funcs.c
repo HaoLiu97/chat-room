@@ -3,6 +3,8 @@
 
 # include "blather.h"
 
+extern int DO_ADVANCED;
+
 // Gets a pointer to the client_t struct at the given index. If the
 // index is beyond n_clients, the behavior of the function is
 // unspecified and may cause a program crash.
@@ -38,20 +40,21 @@ void server_start(server_t *server, char *server_name, int perms) {
     server->join_fd = open(fifo_name, O_RDWR); // open the FIFO and stores its file descriptor in join_fd
     check_fail(server->join_fd == -1, 1, "open fifo file %s fail.\n", fifo_name);
 
-    char log_name[MAXNAME + 5];
-    strcpy(log_name, server_name);
-    strcat(log_name, ".log");
-    // remove(log_name); // remove any existing file of that name
-    server->log_fd = open(log_name, O_RDWR | O_CREAT);
-    check_fail(server->log_fd == -1, 1, "open log file %s fail.\n", log_name);
-    server->start_time_sec = time(NULL);
+    if(DO_ADVANCED) {
+        char log_name[MAXNAME + 5];
+        strcpy(log_name, server_name);
+        strcat(log_name, ".log");
+        // remove(log_name); // remove any existing file of that name
+        server->log_fd = open(log_name, O_RDWR | O_CREAT);
+        check_fail(server->log_fd == -1, 1, "open log file %s fail.\n", log_name);
+        server->start_time_sec = time(NULL);
+        char sem_name[MAXNAME + 5];
+        strcpy(sem_name, server_name);
+        strcat(sem_name, ".sem");
+        server->log_sem = sem_open(sem_name, O_RDWR | O_CREAT, 0644, 1);
+    }
 
-    char sem_name[MAXNAME + 5];
-    strcpy(sem_name, server_name);
-    strcat(sem_name, ".sem");
-    server->log_sem = sem_open(sem_name, O_RDWR | O_CREAT, 0644, 1);
-
-    log_printf("server_start: %s\n", server->server_name);
+    dbg_printf("server_start: %s\n", server->server_name);
     log_printf("END: server_start()\n");
 }
 
@@ -68,7 +71,8 @@ void server_start(server_t *server, char *server_name, int perms) {
 void server_shutdown(server_t *server) {
     log_printf("BEGIN: server_shutdown()\n");
     close(server->join_fd); // close the join FIFO
-    remove(server->server_name); // remove FIFO
+    // char *fifo_name = strcat(server->server_name, ".fifo");
+    // remove(fifo_name); // remove FIFO
 
     mesg_t mesg;
     memset(&mesg, 0, sizeof(mesg_t));
@@ -80,15 +84,17 @@ void server_shutdown(server_t *server) {
     }
 
     // TODO Advanced
-    close(server->log_fd);
     close(server->join_fd);
-    sem_close(server->log_sem);
-    char sem_name[MAXNAME + 5];
-    strcpy(sem_name, server->server_name);
-    strcat(sem_name, ".sem");
-    check_fail(sem_unlink(sem_name) == -1, 1, "unlink sem %s error.", sem_name);
+    if(DO_ADVANCED) {
+        close(server->log_fd);
+        sem_close(server->log_sem);
+        char sem_name[MAXNAME + 5];
+        strcpy(sem_name, server->server_name);
+        strcat(sem_name, ".sem");
+        check_fail(sem_unlink(sem_name) == -1, 1, "unlink sem %s error.", sem_name);
+    }
 
-    log_printf("server_shutdown: %s\n", server->server_name);
+    dbg_printf("server_shutdown: %s\n", server->server_name);
     log_printf("END: server_shutdown()\n");
 }
 
@@ -133,7 +139,7 @@ int server_add_client(server_t *server, join_t *join) {
     server->client[server->n_clients++] = client;
     server_broadcast(server, &join_mesg);
 
-    log_printf("server_add_client: add %s to %s\n", join->name, server->server_name);
+    dbg_printf("server_add_client: add %s to %s\n", join->name, server->server_name);
     log_printf("END: server_add_client()\n");
     return 0;
 }
@@ -171,17 +177,19 @@ int server_remove_client(server_t *server, int idx) {
 // should not be written to the log.
 void server_broadcast(server_t *server, mesg_t *mesg) {
     // send the given message to all clients connected to the server
-    log_printf("server_broadcast() %d\n", server->n_clients);
+    dbg_printf("server_broadcast() %d\n", server->n_clients);
     for (int i = 0; i < server->n_clients; ++i) {
         long n_write = write(server_get_client(server, i)->to_client_fd, mesg, sizeof(mesg_t));
         check_fail(n_write == -1, 1, "write to fd %d error.\n", server_get_client(server, i)->to_client_fd);
     }
 
     // ADVANCED, write to binary log
-    if (mesg->kind != BL_PING) {
-        server_log_message(server, mesg);
+    if(DO_ADVANCED) {
+        if (mesg->kind != BL_PING) {
+            server_log_message(server, mesg);
+        }
     }
-    log_printf("server_broadcast: %s\n", mesg->body);
+    dbg_printf("server_broadcast: %s\n", mesg->body);
 }
 
 // Checks all sources of data for the server to determine if any are
@@ -205,22 +213,21 @@ void server_broadcast(server_t *server, mesg_t *mesg) {
 void server_check_sources(server_t *server) {
     log_printf("BEGIN: server_check_sources()\n");
 
-    struct pollfd poll_fds[2 + MAXCLIENTS];
+    struct pollfd poll_fds[1 + MAXCLIENTS];
     memset(poll_fds, 0, sizeof(poll_fds));
-    for (int i = 0; i < 2 + MAXCLIENTS; ++i) {
+    for (int i = 0; i < 1 + MAXCLIENTS; ++i) {
         poll_fds[i].fd = -1;
     }
     poll_fds[0].fd = server->join_fd;
     poll_fds[0].events |= POLLIN;
-//    poll_fds[1].fd = server->log_fd;
-//    poll_fds[1].events |= POLLOUT;
+    
     for (int i = 0; i < server->n_clients; ++i) {
-        poll_fds[i + 2].fd = server->client[i].to_server_fd;
-        poll_fds[i + 2].events |= POLLIN;
+        poll_fds[i + 1].fd = server->client[i].to_server_fd;
+        poll_fds[i + 1].events |= POLLIN;
     }
 
     log_printf("poll()'ing to check %d input sources\n", 1 + server->n_clients);
-    int num = poll(poll_fds, 2 + server->n_clients, -1);
+    int num = poll(poll_fds, 1 + server->n_clients, -1);
     log_printf("poll() completed with return value %d\n", num);
     if (num == -1) {
         log_printf("poll() interrupted by a signal\n");
@@ -236,7 +243,7 @@ void server_check_sources(server_t *server) {
 
     // check all the clients fd
     for (int i = 0; i < server->n_clients; i++) {
-        if (POLLIN & poll_fds[i + 2].revents) {
+        if (POLLIN & poll_fds[i + 1].revents) {
             log_printf("client %d '%s' data_ready = %d\n", i, server_get_client(server, i)->name, 1);
             server_get_client(server, i)->data_ready = 1;
         } else {
@@ -267,7 +274,7 @@ void server_handle_join(server_t *server) {
     memset(&join, 0, sizeof(join_t));
     long n_read = read(server->join_fd, &join, sizeof(join_t));
     check_fail(n_read == -1, 1, "read fd %d error.\n", server->join_fd);
-    dbg_printf("join request for new client '%s'\n", join.name);
+    log_printf("join request for new client '%s'\n", join.name);
     server_add_client(server, &join);
     server->join_ready = 0;
     log_printf("END: server_handle_join()\n");
@@ -296,7 +303,7 @@ int server_client_ready(server_t *server, int idx) {
 // LOG Messages:
 // log_printf("BEGIN: server_handle_client()\n");           // at beginning of function
 // log_printf("client %d '%s' DEPARTED\n",                  // indicates client departed
-// log_printf("client %d '%s' MESSAGE '%s'\n",              // indicates client message
+// log_printf("client %d '%s' MESSAGE '%s'\n")              // indicates client message
 // log_printf("END: server_handle_client()\n");             // at end of function
 void server_handle_client(server_t *server, int idx) {
     log_printf("BEGIN: server_handle_client()\n");
@@ -311,8 +318,10 @@ void server_handle_client(server_t *server, int idx) {
         case BL_DEPARTED:
             server_remove_client(server, idx);
             server_broadcast(server, &mesg);
+            log_printf("client %d '%s' DEPARTED\n", idx, mesg.name);
             break;
         case BL_MESG:
+            log_printf("client %d '%s' MESSAGE '%s'\n", idx, mesg.name, mesg.body);
             server_broadcast(server, &mesg);
             break;
         case BL_DISCONNECTED: // TODO Advanced

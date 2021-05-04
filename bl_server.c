@@ -7,10 +7,15 @@ server_t server_actual;
 server_t * server = &server_actual;
 int DO_ADVANCED;
 
+pthread_t user_thread;
 // shutting down gracefully.
 void grace_shutdown(int sig) {
     dbg_printf("shutdown gracefully.\n");
+    log_printf("poll() completed with return value %d\n", -1);
+    log_printf("poll() interrupted by a signal\n");
+    log_printf("END: server_check_sources()\n");
     server_shutdown(server);
+    
     exit(0);
 }
 
@@ -34,20 +39,23 @@ int main(int argc, char *argv[]) {
     }
 
     // The server should handle SIGTERM and SIGINT by shutting down gracefully.
-    struct sigaction sa;
+    struct sigaction sa = {};
     sigemptyset(&sa.sa_mask);
     sa.sa_handler = grace_shutdown;
+    sa.sa_flags = SA_RESTART;
     sigaction(SIGTERM, &sa, NULL);
     sigaction(SIGINT,  &sa, NULL);
 
-    // ping
-    struct sigaction sa_ping;
-    sigemptyset(&sa_ping.sa_mask);
-    sa_ping.sa_handler = ping_clients;
-    sa_ping.sa_flags = SA_RESTART; // restart poll
-    sigaction(SIGALRM, &sa_ping, NULL);
     if(DO_ADVANCED) {
-        alarm(1);
+        // ping
+        struct sigaction sa_ping = {};
+        sigemptyset(&sa_ping.sa_mask);
+        sa_ping.sa_handler = ping_clients;
+        sa_ping.sa_flags = SA_RESTART; // restart poll
+        sigaction(SIGALRM, &sa_ping, NULL);
+        if (DO_ADVANCED) {
+            alarm(1);
+        }
     }
 
     // start server

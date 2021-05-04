@@ -1,0 +1,10 @@
+- Move the entire contents of this directory into the main p2-code
+  directory.
+- Place the following line at the END of your Makefile
+
+  # At the END of Makefile
+  include test_Makefile
+
+- Use 'make test' to run all tests
+- Use 'make test testnum=5' to run a single test
+- Use `make zip' to create p2-code.zip for submission

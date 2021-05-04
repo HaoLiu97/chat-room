@@ -1,0 +1,30 @@
+############################################################
+## TEST TARGETS
+
+# test : bl_client bl_server
+# 	@chmod u+rx test_*
+# 	./test_blather.sh $(testnum)
+
+test-setup:
+	@chmod u+rx testy test_filter_client_output
+
+
+test : test-setup bl_client bl_server
+	./testy test_blather.org $(testnum)
+
+
+clean-tests :
+	rm -rf test-results/
+	mkdir -p test-results
+
+############################################################
+# 'make zip' to create p1-code.zip for submission
+AN=p2
+SHELL  = /bin/bash
+CWD    = $(shell pwd | sed 's/.*\///g')
+zip : clean clean-tests
+	rm -f $(AN)-code.zip
+	cd .. && zip "$(CWD)/$(AN)-code.zip" -r "$(CWD)"
+	@echo Zip created in $(AN)-code.zip
+	@if (( $$(stat -c '%s' $(AN)-code.zip) > 10*(2**20) )); then echo "WARNING: $(AN)-code.zip seems REALLY big, check there are no abnormally large test files"; du -h $(AN)-code.zip; fi
+	@if (( $$(unzip -t $(AN)-code.zip | wc -l) > 256 )); then echo "WARNING: $(AN)-code.zip has 256 or more files in it which may cause submission problems"; fi
